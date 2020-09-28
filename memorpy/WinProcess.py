@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with memorpy.  If not, see <http://www.gnu.org/licenses/>.
 
-from ctypes import pointer, sizeof, windll, create_string_buffer, c_ulong, byref, GetLastError, c_bool, WinError
+from ctypes import pointer, sizeof, windll, create_string_buffer, c_ulong, byref, GetLastError, c_bool, WinError, addressof, create_unicode_buffer
 from .structures import *
 import copy
 import struct
@@ -69,31 +69,44 @@ class WinProcess(BaseProcess):
 
     @staticmethod
     def list():
-        processes=[]
-        arr = c_ulong * 256
-        lpidProcess= arr()
-        cb = sizeof(lpidProcess)
-        cbNeeded = c_ulong()
-        hModule = c_ulong()
-        count = c_ulong()
-        modname = create_string_buffer(100)
+        PROCESS_TERMINATE = 0x0001
         PROCESS_QUERY_INFORMATION = 0x0400
         PROCESS_VM_READ = 0x0010
 
-        psapi.EnumProcesses(byref(lpidProcess), cb, byref(cbNeeded))
-        nReturned = cbNeeded.value/sizeof(c_ulong())
-
-        pidProcess = [i for i in lpidProcess][:nReturned]
-        for pid in pidProcess:
-            proc={ "pid": int(pid) }
-            hProcess = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid)
-            if hProcess:
-                psapi.EnumProcessModules(hProcess, byref(hModule), sizeof(hModule), byref(count))
-                psapi.GetModuleBaseNameA(hProcess, hModule.value, modname, sizeof(modname))
-                proc["name"]=modname.value
-                kernel32.CloseHandle(hProcess)
-            processes.append(proc)
-        return processes
+        BIG_ARRAY = DWORD * 4096
+        processes = BIG_ARRAY()
+        needed = DWORD()
+     
+        procs = []
+        result = windll.psapi.EnumProcesses(processes,
+                                            sizeof(processes),
+                                            addressof(needed))
+        if not result:
+            return procs
+     
+        num_results = int(needed.value / sizeof(DWORD))
+     
+        for i in range(num_results):
+            pid = processes[i]
+            process = windll.kernel32.OpenProcess(PROCESS_QUERY_INFORMATION |
+                                                  PROCESS_VM_READ,
+                                                  0, pid)
+            if process:
+                module = HANDLE()
+                result = windll.psapi.EnumProcessModules(process,
+                                                         addressof(module),
+                                                         sizeof(module),
+                                                         addressof(needed))
+                if result:
+                    name = create_unicode_buffer(1024)
+                    result = windll.psapi.GetModuleBaseNameW(process, module,
+                                                             name, len(name))
+                    proc = {'name': name.value, 'pid': pid}
+                    procs.append(proc)
+                    windll.kernel32.CloseHandle(module)
+                windll.kernel32.CloseHandle(process)
+     
+        return procs
 
     @staticmethod
     def processes_from_name(processName):
