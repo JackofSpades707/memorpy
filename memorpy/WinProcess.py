@@ -14,13 +14,15 @@
 # You should have received a copy of the GNU General Public License
 # along with memorpy.  If not, see <http://www.gnu.org/licenses/>.
 
-from ctypes import pointer, sizeof, windll, create_string_buffer, c_ulong, byref, GetLastError, c_bool, WinError, addressof, create_unicode_buffer
+from ctypes import pointer, sizeof, windll, create_string_buffer, c_ulong, byref, GetLastError, c_bool, WinError
 from .structures import *
 import copy
 import struct
 import memorpy.utils as utils
 import platform
 from .BaseProcess import BaseProcess, ProcessException
+
+import win32pdh, string, win32api, pywintypes
 
 psapi       = windll.psapi
 kernel32    = windll.kernel32
@@ -69,43 +71,24 @@ class WinProcess(BaseProcess):
 
     @staticmethod
     def list():
-        PROCESS_TERMINATE = 0x0001
-        PROCESS_QUERY_INFORMATION = 0x0400
-        PROCESS_VM_READ = 0x0010
-
-        BIG_ARRAY = DWORD * 4096
-        processes = BIG_ARRAY()
-        needed = DWORD()
-     
-        procs = []
-        result = psapi.EnumProcesses(processes,
-                                            sizeof(processes),
-                                            addressof(needed))
-        if not result:
-            return procs
-     
-        num_results = int(needed.value / sizeof(DWORD))
-     
-        for i in range(num_results):
-            pid = processes[i]
-            process = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION |
-                                                  PROCESS_VM_READ,
-                                                  0, pid)
-            if process:
-                module = HANDLE()
-                result = psapi.EnumProcessModules(process,
-                                                         addressof(module),
-                                                         sizeof(module),
-                                                         addressof(needed))
-                if result:
-                    name = create_unicode_buffer(1024)
-                    result = psapi.GetModuleBaseNameW(process, module,
-                                                             name, len(name))
-                    proc = {'name': name.value, 'pid': pid}
-                    procs.append(proc)
-                    kernel32.CloseHandle(module)
-                windll.kernel32.CloseHandle(process)
-     
+        #each instance is a process, you can have multiple processes w/same name 
+        junk, instances = win32pdh.EnumObjectItems(None,None,'process', win32pdh.PERF_DETAIL_WIZARD) 
+        procs=[] 
+        proc_dict={} 
+        for instance in instances: 
+            proc_dict[instance]=0 
+        for instance, max_instances in proc_dict.items(): 
+            try:
+                for inum in range(max_instances+1): 
+                    hq = win32pdh.OpenQuery() # initializes the query handle  
+                    path = win32pdh.MakeCounterPath( (None,'process',instance, None, inum,'ID Process') ) 
+                    counter_handle=win32pdh.AddCounter(hq, path)  
+                    win32pdh.CollectQueryData(hq) #collects data for the counter  
+                    type, val = win32pdh.GetFormattedCounterValue(counter_handle, win32pdh.PDH_FMT_LONG)
+                    procs.append({'name': instance, 'pid': val})
+                    win32pdh.CloseQuery(hq)  
+            except pywintypes.error as e:
+                print(e) #TODO: use logger instead
         return procs
 
     @staticmethod
