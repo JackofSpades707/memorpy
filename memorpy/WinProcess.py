@@ -78,7 +78,7 @@ class WinProcess(BaseProcess):
         needed = DWORD()
      
         procs = []
-        result = windll.psapi.EnumProcesses(processes,
+        result = psapi.EnumProcesses(processes,
                                             sizeof(processes),
                                             addressof(needed))
         if not result:
@@ -88,22 +88,22 @@ class WinProcess(BaseProcess):
      
         for i in range(num_results):
             pid = processes[i]
-            process = windll.kernel32.OpenProcess(PROCESS_QUERY_INFORMATION |
+            process = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION |
                                                   PROCESS_VM_READ,
                                                   0, pid)
             if process:
                 module = HANDLE()
-                result = windll.psapi.EnumProcessModules(process,
+                result = psapi.EnumProcessModules(process,
                                                          addressof(module),
                                                          sizeof(module),
                                                          addressof(needed))
                 if result:
                     name = create_unicode_buffer(1024)
-                    result = windll.psapi.GetModuleBaseNameW(process, module,
+                    result = psapi.GetModuleBaseNameW(process, module,
                                                              name, len(name))
                     proc = {'name': name.value, 'pid': pid}
                     procs.append(proc)
-                    windll.kernel32.CloseHandle(module)
+                    kernel32.CloseHandle(module)
                 windll.kernel32.CloseHandle(process)
      
         return procs
