@@ -91,7 +91,8 @@ class MemWorker(object):
 
     def parse_re_function(self, b, value, offset):
         for name, regex in value:
-            for res in regex.finditer(b):
+            for res in regex.finditer(b.decode('latin')): # converted bytes to str
+                # print(f"{name}: {self.Address(offset+res.start())}")
                 yield name, self.Address(offset+res.start(), 'bytes')
                 """
                 index = b.find(res)
